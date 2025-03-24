@@ -20,8 +20,18 @@
   },
   "homepage": "https://github.com/Rev-Santiago/conference_website_backend#readme",
   "dependencies": {
+    "axios": "^1.8.2",
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "flowbite": "^3.1.2",
+    "helmet": "^8.1.0",
+    "ics": "^3.8.1",
+    "jsonwebtoken": "^9.0.2",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.13.0"
   }
 }
