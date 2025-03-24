@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/Rev-Santiago/conference_website_backend#readme",
   "dependencies": {
+    "dotenv": "^16.4.7",
     "express": "^4.21.2"
   }
 }
