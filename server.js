@@ -10,6 +10,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import process from "process";
 import icsRoute from "./routes/icsRoute.js";
+import screenshotRouter from "./routes/screenShot.js";
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -22,17 +24,20 @@ app.use(express.json());
 // ✅ CORS Configuration
 app.use(
     cors({
-        origin: "http://localhost:5173",
-        credentials: true,
+        origin: "http://localhost:5173", // Ensure this matches the client-side URL
+        credentials: true,  // Allow cookies and authorization headers
     })
 );
 
+
+
 app.use("/api", icsRoute);
+app.use("/api", screenshotRouter);
 
 // ✅ Rate Limiting for Login
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5,
+    max: 100,
     message: { error: "Too many login attempts. Please try again later." },
 });
 
@@ -109,7 +114,7 @@ app.get("/api/events-history", async (req, res) => {
         // Fetch past event dates with pagination (event_date < today's date)
         const [rows] = await db.query(
             `SELECT DISTINCT event_date 
-             FROM events_history 
+             FROM events 
              WHERE event_date < CURDATE()  -- Only past events
              ORDER BY event_date DESC 
              LIMIT ? OFFSET ?`,
@@ -125,7 +130,7 @@ app.get("/api/events-history", async (req, res) => {
         // Fetch schedules for the event dates
         const [scheduleRows] = await db.query(
             `SELECT event_date, time_slot, program 
-             FROM events_history 
+             FROM events 
              WHERE event_date IN (?) 
              ORDER BY event_date DESC, time_slot ASC`,
             [eventDates]
@@ -143,7 +148,7 @@ app.get("/api/events-history", async (req, res) => {
 
         // Count total records for pagination (for past events only)
         const [totalResult] = await db.execute(
-            "SELECT COUNT(DISTINCT event_date) AS total FROM events_history WHERE event_date < CURDATE()"
+            "SELECT COUNT(DISTINCT event_date) AS total FROM events WHERE event_date < CURDATE()"
         );
         const totalRecords = totalResult[0].total;
         const totalPages = Math.ceil(totalRecords / limit);
@@ -158,22 +163,35 @@ app.get("/api/events-history", async (req, res) => {
 
 
 
-// 🔐 Register a New User
+// 🔐 Register a New User with Custom Account Type
 app.post("/api/register", async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, account_type = 'admin' } = req.body; // Default to 'admin'
+    
+    // Validate input
     if (!email || !password || password.length < 8) {
         return res.status(400).json({ error: "Invalid email or password." });
     }
 
+    if (account_type !== 'admin' && account_type !== 'super_admin') {
+        return res.status(400).json({ error: "Invalid account type." });
+    }
+
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute("INSERT INTO users (email, password) VALUES (?, ?)", [email, hashedPassword]);
+        
+        // Insert the new user with the specified account_type
+        await db.execute(
+            "INSERT INTO users (email, password, account_type) VALUES (?, ?, ?)", 
+            [email, hashedPassword, account_type]
+        );
+        
         res.json({ message: "User registered successfully." });
     } catch (error) {
         console.error("Error during user registration:", error.message);
         res.status(500).json({ error: "Registration failed." });
     }
 });
+
 
 // 🔑 User Login
 app.post("/api/login", loginLimiter, async (req, res) => {
@@ -221,7 +239,7 @@ app.get("/api/schedule", async (req, res) => {
     try {
         const query = `
             SELECT event_date, time_slot, program, venue, online_room_link  
-            FROM events_history 
+            FROM events 
             WHERE event_date >= CURDATE()  -- Only fetch current and future events
             ORDER BY event_date, time_slot;
         `;
@@ -231,7 +249,6 @@ app.get("/api/schedule", async (req, res) => {
         const groupedData = rows.reduce((acc, event) => {
             const { event_date, time_slot, program, venue, online_room_link } = event;
             const dateKey = event_date.toISOString().split("T")[0]; // Format date properly
-            
             if (!acc[dateKey]) {
                 acc[dateKey] = { date: dateKey, events: [] };
             }
@@ -258,7 +275,7 @@ app.get("/api/events", async (req, res) => {
     try {
         const [rows] = await db.query(
             `SELECT event_date, program, venue, online_room_link, time_slot 
-             FROM events_history
+             FROM events
              WHERE event_date >= CURDATE()  -- Only fetch events for today or future dates
              ORDER BY event_date ASC`
         );
@@ -289,6 +306,36 @@ app.get("/api/events", async (req, res) => {
     }
 });
 
+// 📅 Admin Event Preview API
+app.get("/api/admin_event_preview", async (req, res) => {
+    try {
+        // Query to fetch events from the database
+        const query = `
+            SELECT title, event_date AS date, time_slot AS time, venue, speakers, theme, category
+            FROM events
+            ORDER BY event_date DESC;  -- Adjust the query to match your data structure
+        `;
+        const [rows] = await db.query(query);
+
+        // Transform the result into the required format
+        const eventList = rows.map(event => ({
+            title: event.title,
+            date: event.date,
+            time: event.time,
+            venue: event.venue,
+            speakers: event.speakers,
+            theme: event.theme,
+            category: event.category,
+        }));
+
+        // Respond with the formatted events
+        res.json(eventList);
+
+    } catch (error) {
+        console.error("Error fetching event preview:", error.message);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
 
 
 
